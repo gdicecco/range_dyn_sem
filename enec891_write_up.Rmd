@@ -1,0 +1,94 @@
+---
+title: "SEM final"
+author: "Grace Di Cecco"
+date: "11/19/2020"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(lavaan)
+library(piecewiseSEM)
+library(tidyverse)
+library(cowplot)
+
+theme_set(theme_classic(base_size = 12))
+```
+
+## Structural equation modeling of species range changes
+
+#### Data sources
+
+For my project, I decided to build an SEM examining whether species' niche breadths along multiple niche axes predicts shifts in their range-wide population size and range occupancy from 1970 to the present in North American breeding birds. To do this, I obtained data on the trend in population and change in range occupancy (the difference in the proportion of occupied survey locations from 2012-2017 and 1970-1975) from the North American Breeding Bird Survey for species that occurred on greater than 100 BBS survey routes throughout the study time period (https://www.pwrc.usgs.gov/bbs/). I also obtained a measure of climatic niche breadth, environmental tolerance (higher values indicate broader niche breadth; Hurlbert & White 2007) and diet niche breadth (number of diet categories from EltonTraits 1.0; Wilman et al. 2014). I only included species for which I had all four of these data points, which was 210 species total.
+
+The below figures show the distribution of values for each of the four variables used in the analysis.
+
+```{r, echo = F}
+## read in the data
+
+niche_breadth <- read.csv("species_niche_breadths.csv", stringsAsFactors = F)
+
+range_dyn <- read.csv("species_range_dynamics.csv", stringsAsFactors = F)
+
+spp_data <- niche_breadth %>%
+  left_join(range_dyn, by = c("aou" = "AOU")) %>%
+  dplyr::select(aou, Species.Name, N.Routes, Diet, Tol, Trend, occ_change) %>%
+  na.omit
+
+plot1 <- ggplot(spp_data, aes(x = Diet)) + geom_histogram(bins = 30, col = "white") +
+  labs(x = "Diet categories", y = "Species")
+
+plot2 <-  ggplot(spp_data, aes(x = Tol)) + geom_histogram(bins = 30, col = "white") +
+  labs(x = "Climatic tolerance", y = "Species")
+
+plot3 <- ggplot(spp_data, aes(x = Trend)) + geom_histogram(bins = 30, col = "white") +
+  labs(x = "Range-wide population trend", y = "Species")
+
+plot4 <- ggplot(spp_data, aes(x = occ_change)) + geom_histogram(bins = 30, col = "white") +
+  labs(x = "Change in range occupancy", y = "Species")
+
+plot_grid(plot1, plot2, plot3, plot4, nrow = 2)
+
+```
+
+#### Methods and predictions
+
+I wanted to examine whether the two niche breadth variables predicted change in range occupancy and range-wide population size, and predicted that more generalist species with broader diet and climatic niches would be able to expand their range and have higher popluation trends. I also hypothesized that species with expanding populations would also lead to increases in range occupancy, so I included a causal link between trend in range-wide population size and change in range occupancy.
+
+I fit a globally estimated SEM model using the R package `lavaan` and a locally estimated SEM model using `piecewiseSEM`. 
+
+#### Results
+
+```{r Global SEM}
+sem <- '
+occ_change ~ Diet + Tol + Trend
+Trend ~ Diet + Tol
+'
+
+spp_sem <- sem(sem, spp_data)
+summary(spp_sem, standardize = T, rsq = T)
+```
+
+My model did not have enough degrees of freedom to estimate overall model fit, so there is little information gain from the global model compared to the piecewise model.
+
+```{r Local SEM}
+spp_psem <- psem(
+  lm(occ_change ~ Diet + Tol + Trend, data = spp_data),
+  lm(Trend ~ Diet + Tol, data = spp_data),
+  data = spp_data)
+
+summary(spp_psem)
+```
+
+I found that the trend in range-wide population was a strong positive predictor of change in occupancy, and broader diet and climatic niches were weak positive predictors of change in occupancy. Diet niche breadth was also a weak positive predictor of trend in population size, and climatic niche breadth did not seem to have an effect on the trend in population size. Additionally, the predictors considered here explained about 34% of the variation in occupancy change, but very little of the variation in trend in population size.
+
+#### Future directions
+
+I would also like to include information about species habitat niche breadth and change in range boundaries in a future analysis. I also plan to refine my measurement of diet niche breadth to incorporate the proportion of a species' diet that comes from each category in an evenness index. In calculating the change in range occupancy, it looks like most species have positive shifts in occupancy, however that may be due simply to the increase over time in BBS routes. In a future iteration of this analysis, I will account for differences in sampling effort over time and use species ranges to identify all possible BBS routes within their breeding range, as opposed to just any BBS survey location the species appeared at over the study period.
+
+#### Works cited
+
+Hurlbert, A.H. and White, E.P. (2007), Ecological correlates of geographical range occupancy in North American birds. Global Ecology and Biogeography, 16: 764-773. https://doi-org.libproxy.lib.unc.edu/10.1111/j.1466-8238.2007.00335.x
+
+Wilman, H., Belmaker, J., Simpson, J., de la Rosa, C., Rivadeneira, M.M. and Jetz, W. (2014), EltonTraits 1.0: Species‐level foraging attributes of the world's birds and mammals. Ecology, 95: 2027-2027. https://doi-org.libproxy.lib.unc.edu/10.1890/13-1917.1
